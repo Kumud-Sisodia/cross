@@ -1,0 +1,37 @@
+version: 0.2
+
+phases:
+  install:
+    commands:
+      #2021.10.1 remove -s option. - nohup dockerd --host=unix:///var/run/docker.sock --host=tcp://127.0.0.1:2375 --storage-driver=overlay&
+      - nohup dockerd --host=unix:///var/run/docker.sock --host=tcp://127.0.0.1:2375 --storage-driver=overlay&
+      # - nohup dockerd --host=unix:///var/run/docker.sock --host=tcp://127.0.0.1:2375 &
+      #- timeout 15 sh -c "until docker info; do echo .; sleep 1; done"
+  pre_build:
+    commands:
+      #- setting environment
+      - echo "${DEVELOP_ENV}"
+      - dot_DEVELOP_ENV=".${DEVELOP_ENV}"
+      - echo Logging in to Amazon ECR
+      #- $(aws ecr get-login --no-include-email --region ${AWS_DEFAULT_REGION})
+      - aws ecr get-login-password --region ${AWS_DEFAULT_REGION} | docker login --username AWS --password-stdin ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com
+      - echo copy env from s3
+        #- aws s3 cp s3://${BUCKET_NAME}/${DEVELOP_ENV}/server/env.${DEVELOP_ENV} .env
+  build:
+    commands:
+      - echo Build started on `date`
+      - echo Building the Docker image...
+      # - docker ps -a
+      - docker build --no-cache --progress=plain -t ${IMAGE_REPO_NAME}:${IMAGE_TAG} -f Dockerfile${dot_DEVELOP_ENV} .
+      - docker tag ${IMAGE_REPO_NAME}:${IMAGE_TAG} ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${IMAGE_REPO_NAME}:${IMAGE_TAG}
+  post_build:
+    commands:
+      - echo Pushing the Docker image...
+      - docker push ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${IMAGE_REPO_NAME}:${IMAGE_TAG}
+      #- printf '[{"name":"searshomeportal-portal-container","imageUri":"%s"}]' $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$IMAGE_REPO_NAME:$IMAGE_TAG > imagedefinitions.json
+      - printf '[{"name":"%s","imageUri":"%s"}]' "searshomeportal-${DEVELOP_ENV}-portal-container" "$AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$IMAGE_REPO_NAME:$IMAGE_TAG" > imagedefinitions.json
+      #
+    finally:
+      - echo Build completed on `date`
+artifacts:
+  files: imagedefinitions.json
